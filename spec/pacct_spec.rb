@@ -83,7 +83,7 @@ describe Pacct::Log do
     :user_name => 'root',
     :group_name => 'root',
     :command_name => 'ls',
-    :start_time => Time.new(2012, 1, 1),
+    :start_time => Time.local(2012, 1, 1),
     :wall_time => 10.0,
     :user_time => 1,
     :system_time => 1,
