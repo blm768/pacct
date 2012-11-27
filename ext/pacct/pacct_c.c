@@ -493,7 +493,7 @@ static VALUE set_user_time(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
   
-  data->ac_utime = ulong_to_comp_t(NUM2LONG(value) * ticksPerSecond);
+  data->ac_utime = ulong_to_comp_t(NUM2ULONG(value) * ticksPerSecond);
   
   return Qnil;
 }
@@ -515,7 +515,7 @@ static VALUE set_system_time(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
   
-  data->ac_stime = ulong_to_comp_t(NUM2LONG(value) * ticksPerSecond);
+  data->ac_stime = ulong_to_comp_t(NUM2ULONG(value) * ticksPerSecond);
   
   return Qnil;
 }
@@ -592,7 +592,7 @@ static VALUE set_average_mem_usage(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
   
-  data->ac_mem = ulong_to_comp_t(NUM2LONG(value) * pageSize / 1024);
+  data->ac_mem = ulong_to_comp_t(NUM2ULONG(value) * pageSize / 1024);
   
   return Qnil;
 }
@@ -659,7 +659,7 @@ static VALUE test_check_call_macro(VALUE self, VALUE test) {
     case 3:
       CHECK_CALL(errno = ERANGE, 0);
     default:
-      rb_raise("Unknown test code %i", i);
+      rb_raise(rb_eRangeError, "Unknown test code %i", i);
   }
   return Qnil;
 }
@@ -667,7 +667,7 @@ static VALUE test_check_call_macro(VALUE self, VALUE test) {
 static VALUE test_read_failure(VALUE self) {
   PacctLog log;
   //VALUE entry = pacct_entry_new(NULL);
-  char* filename = "/dev/null";
+  const char* filename = "/dev/null";
   log.num_entries = 0;
   log.filename = malloc(strlen(filename) + 1);
   strcpy(log.filename, filename);
@@ -681,7 +681,7 @@ static VALUE test_write_failure(VALUE self) {
   PacctLog* ptr;
   VALUE log = Data_Make_Struct(cLog, PacctLog, 0, pacct_log_free, ptr);
   VALUE entry = pacct_entry_new(NULL);
-  char* filename = "spec/pacct_spec.rb";
+  const char* filename = "spec/pacct_spec.rb";
   ptr->num_entries = 0;
   ptr->filename = malloc(strlen(filename) + 1);
   strcpy(ptr->filename, filename);
@@ -689,6 +689,18 @@ static VALUE test_write_failure(VALUE self) {
   
   write_entry(log, entry);
   return Qnil;
+}
+
+static VALUE test_ulong_to_comp_t(VALUE self, VALUE val) {
+  unsigned long l = (unsigned long)NUM2ULONG(val);
+  comp_t result = ulong_to_comp_t(l);
+  return INT2NUM(result);
+}
+
+static VALUE test_comp_t_to_ulong(VALUE self, VALUE val) {
+  comp_t c = (comp_t)NUM2INT(val);
+  unsigned long result = comp_t_to_ulong(c);
+  return ULONG2NUM(result);
 }
 
 void Init_pacct_c() {
@@ -759,5 +771,6 @@ void Init_pacct_c() {
     rb_define_module_function(mTest, "check_call", test_check_call_macro, 1);
     rb_define_module_function(mTest, "write_failure", test_write_failure, 0);
     rb_define_module_function(mTest, "read_failure", test_read_failure, 0);
+    rb_define_module_function(mTest, "comp_t_to_ulong", test_comp_t_to_ulong, 1);
   }
 }
