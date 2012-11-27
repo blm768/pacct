@@ -74,7 +74,7 @@ static comp_t ulong_to_comp_t(unsigned long l) {
     bits -= 13;
     div_bits = bits / 3;
     if(div_bits >= 8) {
-      rb_raise(rb_eRangeError, "Exponent overflow in ulong_to_comp_t");
+      rb_raise(rb_eRangeError, "Exponent overflow in ulong_to_comp_t: Value %lu is too large.", l);
     }
     rem_bits = bits - div_bits * 3;
     if(rem_bits) {
@@ -95,12 +95,13 @@ static comp_t ulong_to_comp_t(unsigned long l) {
     if(result != expected) { \
       if(errno) { \
         char buf[512]; \
+        VALUE err; \
         snprintf(buf, sizeof(buf), "%s(%u)", __FILE__, __LINE__); \
-        VALUE err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(errno)); \
+        err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(errno)); \
         rb_exc_raise(err); \
       } else { \
         char buf[512]; \
-        snprintf(buf, sizeof(buf), "%s(%u): " #expr ": result %i expected, not %i", __FILE__, __LINE__, expected, result); \ 
+        snprintf(buf, sizeof(buf), "%s(%u): " #expr ": result %i expected, not %i", __FILE__, __LINE__, expected, result); \
         rb_raise(rb_eRuntimeError, buf); \
       } \
     } \
@@ -108,6 +109,7 @@ static comp_t ulong_to_comp_t(unsigned long l) {
 
 typedef struct {
   FILE* file;
+  char* filename;
   long numEntries;
 } PacctLog;
 
@@ -117,6 +119,7 @@ static VALUE pacct_log_free(void* p) {
     fclose(log->file);
     log->file = NULL;
   }
+  free(log->filename);
   free(p);
   return Qnil;
 }
@@ -148,39 +151,43 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
   PacctLog* log;
   FILE* acct;
   long length;
-  char* cFilename = StringValueCStr(filename);
-  const char* cMode = "rb";
+  char* c_filename = StringValueCStr(filename);
+  size_t c_filename_len;
+  const char* c_mode = "rb";
   
   if(mode != Qnil) {
     int isValidMode = 0;
     size_t i;
-    cMode = StringValueCStr(mode);
+    c_mode = StringValueCStr(mode);
     for(i = 0; i < sizeof(validFileModes) / sizeof(char*); ++i) {
-      if(strcmp(cMode, validFileModes[i]) == 0) {
+      if(strcmp(c_mode, validFileModes[i]) == 0) {
         isValidMode = 1;
         break;
       }
     }
     if(!isValidMode) {
-      rb_raise(rb_eArgError, "Invalid mode for Pacct::File: '%s'", cMode);
+      rb_raise(rb_eArgError, "Invalid mode for Pacct::File: '%s'", c_mode);
     }
   }
   
-  acct = fopen(cFilename, cMode);
+  acct = fopen(c_filename, c_mode);
   if(!acct) {
-    rb_raise(rb_eIOError, "Unable to open file '%s'", cFilename);
+    rb_raise(rb_eIOError, "Unable to open file '%s'", c_filename);
   }
   
   Data_Get_Struct(self, PacctLog, log);
   
   log->file = acct;
+  c_filename_len = strlen(c_filename);
+  log->filename = malloc(c_filename_len);
+  memcpy(log->filename, c_filename, c_filename_len);
   
   CHECK_CALL(fseek(acct, 0, SEEK_END), 0);
   length = ftell(acct);
   rewind(acct);
   
   if(length % sizeof(struct acct_v3) != 0) {
-    rb_raise(rb_eIOError, "Accounting file appears to be the wrong size.");
+    rb_raise(rb_eIOError, "Accounting file '%s' appears to be the wrong size.", c_filename);
   }
   
   log->numEntries = length / sizeof(struct acct_v3);
@@ -205,7 +212,7 @@ static VALUE pacct_entry_new(PacctLog* log) {
   if(log) {
     size_t entriesRead = fread(ptr, sizeof(struct acct_v3), 1, log->file);
     if(entriesRead != 1) {
-      rb_raise(rb_eIOError, "Unable to read record from accounting file");
+      rb_raise(rb_eIOError, "Unable to read record from accounting file '%s'", log->filename);
     }
   } else {
     memset(ptr, 0, sizeof(struct acct_v3));
@@ -245,7 +252,7 @@ static VALUE each_entry(int argc, VALUE* argv, VALUE self) {
     rb_raise(rb_eRangeError, "Index %li is out of range", start);
   }
   
-  fseek(log->file, start * sizeof(struct acct_v3), SEEK_SET);
+  CHECK_CALL(fseek(log->file, start * sizeof(struct acct_v3), SEEK_SET), 0);
   
   for(i = start; i < log->numEntries; ++i) {
     VALUE entry = pacct_entry_new(log);
@@ -271,11 +278,11 @@ static VALUE last_entry(VALUE self) {
   
   //To do: error checking on file operations?
   pos = ftell(log->file);
-  fseek(log->file, -sizeof(struct acct_v3), SEEK_END);
+  CHECK_CALL(fseek(log->file, -sizeof(struct acct_v3), SEEK_END), 0);
   
   entry = pacct_entry_new(log);
   
-  fseek(log->file, pos, SEEK_SET);
+  CHECK_CALL(fseek(log->file, pos, SEEK_SET), 0);
   
   return entry;
 }
@@ -308,14 +315,16 @@ static VALUE write_entry(VALUE self, VALUE entry) {
   Data_Get_Struct(entry, struct acct_v3, acct);
   
   pos = ftell(log->file);
-  assert(!fseek(log->file, 0, SEEK_END));
+  CHECK_CALL(fseek(log->file, 0, SEEK_END), 0);
   
   //To do: error checking! (also on reads, etc.)
-  assert(fwrite(acct, sizeof(struct acct_v3), 1, log->file) == 1);
+  if(fwrite(acct, sizeof(struct acct_v3), 1, log->file) != 1) {
+    rb_raise(rb_eIOError, "Unable to write to accounting file '%s'", log->filename);
+  }
   
   ++(log->numEntries);
   
-  fseek(log->file, pos, SEEK_SET);
+  CHECK_CALL(fseek(log->file, pos, SEEK_SET), 0);
   
   return Qnil;
 }
@@ -634,14 +643,27 @@ static VALUE set_exit_code(VALUE self, VALUE value) {
   return Qnil;
 }
 
+/*
+Unit testing code
+*/
+static VALUE test_check_call_macro(VALUE self, VALUE test) {
+  int i = NUM2INT(test);
+  switch(i) {
+  
+  }
+  return Qnil;
+}
+
 void Init_pacct_c() {
+  VALUE mRSpec;
+  
   //Get system parameters
   pageSize = getpagesize();
   ticksPerSecond = sysconf(_SC_CLK_TCK);
 
   //Get Ruby objects.
-  cTime = rb_eval_string("Time");
-  cSystemCallError = rb_eval_string("SystemCallError");
+  cTime = rb_const_get(rb_cObject, rb_intern("Time"));
+  cSystemCallError = rb_const_get(rb_cObject, rb_intern("SystemCallError"));
   id_at = rb_intern("at");
   id_new = rb_intern("new");
   id_to_i = rb_intern("to_i");
@@ -690,4 +712,11 @@ void Init_pacct_c() {
   rb_define_method(cEntry, "exit_code=", set_exit_code, 1);
   rb_define_method(cEntry, "command_name", get_command_name, 0);
   rb_define_method(cEntry, "command_name=", set_command_name, 1);
+  
+  //To do: support other testing frameworks?
+  mRSpec = rb_const_get(rb_cObject, rb_intern("RSpec"));
+  if(mRSpec != Qnil) {
+    VALUE mTest = rb_define_module_under(mPacct, "Test");
+    rb_define_module_function(mTest, "check_call_macro", test_check_call_macro, 1);
+  }
 }
