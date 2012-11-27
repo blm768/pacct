@@ -94,11 +94,13 @@ static comp_t ulong_to_comp_t(unsigned long l) {
     result = (expr); \
     if(result != expected) { \
       if(errno) { \
-        VALUE err = rb_funcall(cSystemCallError, id_new, 2, Qnil, INT2NUM(errno)); \
+        char buf[512]; \
+        snprintf(buf, sizeof(buf), "%s(%u)", __FILE__, __LINE__); \
+        VALUE err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(errno)); \
         rb_exc_raise(err); \
       } else { \
         char buf[512]; \
-        snprintf(buf, sizeof(buf), #expr ": result %i expected, not %i", expected, result); \ 
+        snprintf(buf, sizeof(buf), "%s(%u): " #expr ": result %i expected, not %i", __FILE__, __LINE__, expected, result); \ 
         rb_raise(rb_eRuntimeError, buf); \
       } \
     } \
