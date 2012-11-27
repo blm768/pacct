@@ -5,13 +5,8 @@ describe Pacct::Entry do
   
   it "raises an error when a comp_t overflows" do
     e = Pacct::Entry.new
-    err = nil
-    begin
+    expect {
       e.memory = 1000000000000
-    rescue => error
-      err = error
-    end
-    err.should_not eql nil
-    err.message.should match /Exponent overflow in ulong_to_comp_t: Value [\d]+ is too large./
+    }.to raise_error(RangeError, /Exponent overflow in ulong_to_comp_t: Value [\d]+ is too large./)
   end
 end

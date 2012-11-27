@@ -113,7 +113,7 @@ typedef struct {
   long num_entries;
 } PacctLog;
 
-static VALUE pacct_log_free(void* p) {
+static void pacct_log_free(void* p) {
   PacctLog* log = (PacctLog*) p;
   if(log->file) {
     fclose(log->file);
@@ -121,7 +121,6 @@ static VALUE pacct_log_free(void* p) {
   }
   free(log->filename);
   free(p);
-  return Qnil;
 }
 
 /*
@@ -204,11 +203,13 @@ static VALUE pacct_log_close(VALUE self) {
     fclose(log->file);
     log->file = NULL;
   }
+  
+  return Qnil;
 }
 
 static VALUE pacct_entry_new(PacctLog* log) {
-  VALUE entry;
-  struct acct_v3* ptr = ALLOC(struct acct_v3);
+  struct acct_v3* ptr;
+  VALUE entry = Data_Make_Struct(cEntry, struct acct_v3, 0, free, ptr);
   if(log) {
     size_t entriesRead = fread(ptr, sizeof(struct acct_v3), 1, log->file);
     if(entriesRead != 1) {
@@ -217,7 +218,6 @@ static VALUE pacct_entry_new(PacctLog* log) {
   } else {
     memset(ptr, 0, sizeof(struct acct_v3));
   }
-  entry = Data_Wrap_Struct(cEntry, 0, free, ptr);
   
   return entry;
 }
@@ -648,8 +648,32 @@ Unit testing code
 static VALUE test_check_call_macro(VALUE self, VALUE test) {
   int i = NUM2INT(test);
   switch(i) {
-  
+    case 0:
+      CHECK_CALL(0, 0);
+      break;
+    case 1:
+      CHECK_CALL(1, 0);
+      break;
+    case 2:
+      CHECK_CALL(errno = 0, 1);
+    case 3:
+      CHECK_CALL(errno = ERANGE, 0);
+    default:
+      rb_raise("Unknown test code %i", i);
   }
+  return Qnil;
+}
+
+static VALUE test_read_failure(VALUE self) {
+  PacctLog log;
+  //VALUE entry = pacct_entry_new(NULL);
+  char* filename = "/dev/null";
+  log.num_entries = 0;
+  log.filename = malloc(strlen(filename) + 1);
+  strcpy(log.filename, filename);
+  log.file = fopen(log.filename, "r");
+  
+  pacct_entry_new(&log);
   return Qnil;
 }
 
@@ -726,11 +750,14 @@ void Init_pacct_c() {
   rb_define_method(cEntry, "command_name", get_command_name, 0);
   rb_define_method(cEntry, "command_name=", set_command_name, 1);
   
+  //test_read_failure(Qnil);
+  
   //To do: support other testing frameworks?
   mRSpec = rb_const_get(rb_cObject, rb_intern("RSpec"));
   if(mRSpec != Qnil) {
     VALUE mTest = rb_define_module_under(mPacct, "Test");
-    rb_define_module_function(mTest, "check_call_macro", test_check_call_macro, 1);
+    rb_define_module_function(mTest, "check_call", test_check_call_macro, 1);
     rb_define_module_function(mTest, "write_failure", test_write_failure, 0);
+    rb_define_module_function(mTest, "read_failure", test_read_failure, 0);
   }
 }

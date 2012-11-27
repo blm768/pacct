@@ -46,7 +46,7 @@ describe Pacct::Log do
   end
   
   it "raises an error if reading fails" do
-    
+    expect { Pacct::Test::read_failure }.to raise_error(IOError, "Unable to read record from accounting file '/dev/null'")
   end
   
   it "correctly finds the last entry" do
