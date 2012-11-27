@@ -45,6 +45,10 @@ describe Pacct::Log do
     end
   end
   
+  it "raises an error if reading fails" do
+    
+  end
+  
   it "correctly finds the last entry" do
     Helpers::double_log('snapshot/pacct_write') do |log|
       entry = log.last_entry
@@ -106,7 +110,9 @@ describe Pacct::Log do
     FileUtils.rm('snapshot/pacct_write')
   end
   
-  it "raises an error if writing fails"
+  it "raises an error if writing fails" do
+    expect { Pacct::Test::write_failure }.to raise_error(IOError, "Unable to write to accounting file 'spec/pacct_spec.rb'")
+  end
   
   it "creates files when opened in write mode" do
     FileUtils.rm('snapshot/abc') if File.exists?('snapshot/abc')

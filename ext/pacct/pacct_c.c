@@ -101,7 +101,7 @@ static comp_t ulong_to_comp_t(unsigned long l) {
         rb_exc_raise(err); \
       } else { \
         char buf[512]; \
-        snprintf(buf, sizeof(buf), "%s(%u): " #expr ": result %i expected, not %i", __FILE__, __LINE__, expected, result); \
+        snprintf(buf, sizeof(buf), #expr ": result %i expected, not %i - %s(%u)", expected, result, __FILE__, __LINE__); \
         rb_raise(rb_eRuntimeError, buf); \
       } \
     } \
@@ -110,7 +110,7 @@ static comp_t ulong_to_comp_t(unsigned long l) {
 typedef struct {
   FILE* file;
   char* filename;
-  long numEntries;
+  long num_entries;
 } PacctLog;
 
 static VALUE pacct_log_free(void* p) {
@@ -141,7 +141,7 @@ static VALUE pacct_log_new(int argc, VALUE* argv, VALUE class) {
   log = Data_Make_Struct(class, PacctLog, 0, pacct_log_free, ptr);
   
   ptr->file = NULL;
-  ptr->numEntries = 0;
+  ptr->num_entries = 0;
   
   rb_obj_call_init(log, 2, init_args);
   return log;
@@ -179,7 +179,7 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
   
   log->file = acct;
   c_filename_len = strlen(c_filename);
-  log->filename = malloc(c_filename_len);
+  log->filename = malloc(c_filename_len + 1);
   memcpy(log->filename, c_filename, c_filename_len);
   
   CHECK_CALL(fseek(acct, 0, SEEK_END), 0);
@@ -190,7 +190,7 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
     rb_raise(rb_eIOError, "Accounting file '%s' appears to be the wrong size.", c_filename);
   }
   
-  log->numEntries = length / sizeof(struct acct_v3);
+  log->num_entries = length / sizeof(struct acct_v3);
   
   return self;
 }
@@ -248,13 +248,13 @@ static VALUE each_entry(int argc, VALUE* argv, VALUE self) {
   
   Data_Get_Struct(self, PacctLog, log);
   
-  if(start > log->numEntries) {
+  if(start > log->num_entries) {
     rb_raise(rb_eRangeError, "Index %li is out of range", start);
   }
   
   CHECK_CALL(fseek(log->file, start * sizeof(struct acct_v3), SEEK_SET), 0);
   
-  for(i = start; i < log->numEntries; ++i) {
+  for(i = start; i < log->num_entries; ++i) {
     VALUE entry = pacct_entry_new(log);
     rb_yield(entry);
   }
@@ -272,7 +272,7 @@ static VALUE last_entry(VALUE self) {
   
   Data_Get_Struct(self, PacctLog, log);
   
-  if(log->numEntries == 0) {
+  if(log->num_entries == 0) {
     return Qnil;
   }
   
@@ -295,7 +295,7 @@ static VALUE get_num_entries(VALUE self) {
   
   Data_Get_Struct(self, PacctLog, log);
   
-  return INT2NUM(log->numEntries);
+  return INT2NUM(log->num_entries);
 }
 
 /*
@@ -317,12 +317,11 @@ static VALUE write_entry(VALUE self, VALUE entry) {
   pos = ftell(log->file);
   CHECK_CALL(fseek(log->file, 0, SEEK_END), 0);
   
-  //To do: error checking! (also on reads, etc.)
   if(fwrite(acct, sizeof(struct acct_v3), 1, log->file) != 1) {
     rb_raise(rb_eIOError, "Unable to write to accounting file '%s'", log->filename);
   }
   
-  ++(log->numEntries);
+  ++(log->num_entries);
   
   CHECK_CALL(fseek(log->file, pos, SEEK_SET), 0);
   
@@ -654,6 +653,20 @@ static VALUE test_check_call_macro(VALUE self, VALUE test) {
   return Qnil;
 }
 
+static VALUE test_write_failure(VALUE self) {
+  PacctLog* ptr;
+  VALUE log = Data_Make_Struct(cLog, PacctLog, 0, pacct_log_free, ptr);
+  VALUE entry = pacct_entry_new(NULL);
+  char* filename = "spec/pacct_spec.rb";
+  ptr->num_entries = 0;
+  ptr->filename = malloc(strlen(filename) + 1);
+  strcpy(ptr->filename, filename);
+  ptr->file = fopen(ptr->filename, "r");
+  
+  write_entry(log, entry);
+  return Qnil;
+}
+
 void Init_pacct_c() {
   VALUE mRSpec;
   
@@ -718,5 +731,6 @@ void Init_pacct_c() {
   if(mRSpec != Qnil) {
     VALUE mTest = rb_define_module_under(mPacct, "Test");
     rb_define_module_function(mTest, "check_call_macro", test_check_call_macro, 1);
+    rb_define_module_function(mTest, "write_failure", test_write_failure, 0);
   }
 }
