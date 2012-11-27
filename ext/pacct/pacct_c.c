@@ -44,8 +44,10 @@ static unsigned long comp_t_to_ulong(comp_t c) {
   return (unsigned long)(c & 0x1fff) << (((c >> 13) & 0x7) * 3);
 }
 
+//Prints a number in binary (for debugging)
 static void print_bin(unsigned long val) {
-  unsigned long bits = 1 << (sizeof(unsigned long) * 8 - 1);
+  //Cast prevents warning
+  unsigned long bits = (unsigned long)1 << (sizeof(unsigned long) * 8 - 1);
   putchar('0' + ((val & bits) > 0));
   while(bits >>= 1) {
     putchar('0' + ((val & bits) > 0));
@@ -82,6 +84,25 @@ static comp_t ulong_to_comp_t(unsigned long l) {
     return ((l >> bits) & 0x1fff) | ((div_bits & 0x7) << 13);
   }
 }
+
+//Checks the result of a call, raising an error if it fails
+#define CHECK_CALL(expr, expected_result) \
+  { \
+    typeof(expr) expected = (expected_result); \
+    typeof(expr) result; \
+    errno = 0; \
+    result = (expr); \
+    if(result != expected) { \
+      if(errno) { \
+        VALUE err = rb_funcall(cSystemCallError, id_new, 2, Qnil, INT2NUM(errno)); \
+        rb_exc_raise(err); \
+      } else { \
+        char buf[512]; \
+        snprintf(buf, sizeof(buf), #expr ": result %i expected, not %i", expected, result); \ 
+        rb_raise(rb_eRuntimeError, buf); \
+      } \
+    } \
+  } \
 
 typedef struct {
   FILE* file;
@@ -121,7 +142,6 @@ static VALUE pacct_log_new(int argc, VALUE* argv, VALUE class) {
   return log;
 }
 
-//To do: make mode actually do something?
 static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
   PacctLog* log;
   FILE* acct;
@@ -153,7 +173,7 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
   
   log->file = acct;
   
-  fseek(acct, 0, SEEK_END);
+  CHECK_CALL(fseek(acct, 0, SEEK_END), 0);
   length = ftell(acct);
   rewind(acct);
   
