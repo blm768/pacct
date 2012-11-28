@@ -243,7 +243,7 @@ static VALUE each_entry(int argc, VALUE* argv, VALUE self) {
   
   rb_scan_args(argc, argv, "01", &start_value);
   if(argc && start_value != Qnil) {
-    start = NUM2INT(start_value);
+    start = NUM2UINT(start_value);
   }
   
   Data_Get_Struct(self, PacctLog, log);
@@ -344,7 +344,7 @@ static VALUE set_process_id(VALUE self, VALUE pid) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
   
-  data->ac_pid = NUM2INT(pid);
+  data->ac_pid = NUM2UINT(pid);
   
   return Qnil;
 }
@@ -569,7 +569,7 @@ static VALUE set_start_time(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
   
-  data->ac_btime = NUM2INT(rb_funcall(value, id_to_i, 0));
+  data->ac_btime = NUM2UINT(rb_funcall(value, id_to_i, 0));
   
   return Qnil;
 }
@@ -637,7 +637,7 @@ static VALUE set_exit_code(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
   
-  data->ac_exitcode = NUM2INT(value);
+  data->ac_exitcode = NUM2UINT(value);
   
   return Qnil;
 }
@@ -698,7 +698,7 @@ static VALUE test_ulong_to_comp_t(VALUE self, VALUE val) {
 }
 
 static VALUE test_comp_t_to_ulong(VALUE self, VALUE val) {
-  comp_t c = (comp_t)NUM2INT(val);
+  comp_t c = (comp_t)NUM2UINT(val);
   unsigned long result = comp_t_to_ulong(c);
   return ULONG2NUM(result);
 }
@@ -765,8 +765,8 @@ void Init_pacct_c() {
   //test_read_failure(Qnil);
   
   //To do: support other testing frameworks?
-  mRSpec = rb_const_get(rb_cObject, rb_intern("RSpec"));
-  if(mRSpec != Qnil) {
+  mRSpec = rb_const_defined(rb_cObject, rb_intern("RSpec"));
+  if(mRSpec == Qtrue) {
     VALUE mTest = rb_define_module_under(mPacct, "Test");
     rb_define_module_function(mTest, "check_call", test_check_call_macro, 1);
     rb_define_module_function(mTest, "write_failure", test_write_failure, 0);
