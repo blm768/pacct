@@ -763,8 +763,6 @@ void Init_pacct_c() {
   rb_define_method(cEntry, "command_name", get_command_name, 0);
   rb_define_method(cEntry, "command_name=", set_command_name, 1);
   
-  //test_read_failure(Qnil);
-  
   //To consider: support other testing frameworks?
   mRSpec = rb_const_defined(rb_cObject, rb_intern("RSpec"));
   if(mRSpec == Qtrue) {
