@@ -8,6 +8,7 @@ describe Pacct::Entry do
     comp_t_to_ulong.call((3 << 13) | 20).should eql (20 << 9)
   end
 
+#To do: unit test this (eventually).
 =begin
   it "correctly converts integers to \"comp_t\"s" do
     

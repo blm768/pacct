@@ -5,8 +5,6 @@ describe Pacct::Log do
     @log = Pacct::Log.new('snapshot/pacct')
   end
   
-  #To do: test write methods
-  
   it "correctly loads data" do
     n = 0
     @log.each_entry do |entry|
@@ -34,7 +32,7 @@ describe Pacct::Log do
       n += 1
     end
     n.should eql 0
-    #To do: out-of-range seek
+    expect { @log.each_entry(2) { |e| } }.to raise_error(RangeError)
   end
   
   it "can read data more than once" do

@@ -18,16 +18,13 @@ static char const* validFileModes[] = {
   "w+b",
 };
 
-//To do:
-//Verify that allocations succeed?
-
 VALUE mPacct;
 VALUE cLog;
 VALUE cEntry;
 
-//Ruby's Time class
+//Classes from Ruby
 VALUE cTime;
-//Ruby's SystemCallError class
+VALUE cNoMemoryError;
 VALUE cSystemCallError;
 
 //Identifiers
@@ -56,8 +53,8 @@ static void print_bin(unsigned long val) {
 }
 
 //Converts a long to a comp_t
-//To do: make sure the value is positive?
-//To do: overflow checks? More unit testing?
+//To consider: make sure the value is positive?
+//To consider: more unit testing?
 static comp_t ulong_to_comp_t(unsigned long l) {
   size_t bits = 0;
   unsigned long l2 = l;
@@ -80,7 +77,7 @@ static comp_t ulong_to_comp_t(unsigned long l) {
     if(rem_bits) {
       div_bits += 1;
     }
-    //To do: remove '&'?
+    //To consider: remove '&'?
     return ((l >> bits) & 0x1fff) | ((div_bits & 0x7) << 13);
   }
 }
@@ -106,6 +103,8 @@ static comp_t ulong_to_comp_t(unsigned long l) {
       } \
     } \
   } \
+
+#define ENSURE_ALLOCATED(ptr) if(!ptr) rb_raise(cNoMemoryError, "Out of memory");
 
 typedef struct {
   FILE* file;
@@ -179,6 +178,7 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
   log->file = acct;
   c_filename_len = strlen(c_filename);
   log->filename = malloc(c_filename_len + 1);
+  ENSURE_ALLOCATED(log->filename);
   memcpy(log->filename, c_filename, c_filename_len);
   
   CHECK_CALL(fseek(acct, 0, SEEK_END), 0);
@@ -276,7 +276,6 @@ static VALUE last_entry(VALUE self) {
     return Qnil;
   }
   
-  //To do: error checking on file operations?
   pos = ftell(log->file);
   CHECK_CALL(fseek(log->file, -sizeof(struct acct_v3), SEEK_END), 0);
   
@@ -305,8 +304,7 @@ static VALUE get_num_entries(VALUE self) {
  * Appends the given entry to the file
  */
 static VALUE write_entry(VALUE self, VALUE entry) {
-  //To do: verification?
-  //To do: unit testing
+  //To do consider: verification?
   PacctLog* log;
   long pos;
   struct acct_v3* acct;
@@ -374,7 +372,6 @@ static VALUE get_user_name(VALUE self) {
     VALUE err;
     int e = errno;
     snprintf(buf, 512, "Unable to obtain user name for ID %u", data->ac_uid);
-    //To do: clearer messages when errno == 0?
     if(e == 0) {
         e = ENODATA;
     }
@@ -670,6 +667,7 @@ static VALUE test_read_failure(VALUE self) {
   const char* filename = "/dev/null";
   log.num_entries = 0;
   log.filename = malloc(strlen(filename) + 1);
+  ENSURE_ALLOCATED(log.filename);
   strcpy(log.filename, filename);
   log.file = fopen(log.filename, "r");
   
@@ -684,6 +682,7 @@ static VALUE test_write_failure(VALUE self) {
   const char* filename = "spec/pacct_spec.rb";
   ptr->num_entries = 0;
   ptr->filename = malloc(strlen(filename) + 1);
+  ENSURE_ALLOCATED(ptr->filename);
   strcpy(ptr->filename, filename);
   ptr->file = fopen(ptr->filename, "r");
   
@@ -713,6 +712,8 @@ void Init_pacct_c() {
   //Get Ruby objects.
   cTime = rb_const_get(rb_cObject, rb_intern("Time"));
   cSystemCallError = rb_const_get(rb_cObject, rb_intern("SystemCallError"));
+  cNoMemoryError = rb_const_get(rb_cObject, rb_intern("NoMemoryError"));
+  
   id_at = rb_intern("at");
   id_new = rb_intern("new");
   id_to_i = rb_intern("to_i");
@@ -764,7 +765,7 @@ void Init_pacct_c() {
   
   //test_read_failure(Qnil);
   
-  //To do: support other testing frameworks?
+  //To consider: support other testing frameworks?
   mRSpec = rb_const_defined(rb_cObject, rb_intern("RSpec"));
   if(mRSpec == Qtrue) {
     VALUE mTest = rb_define_module_under(mPacct, "Test");

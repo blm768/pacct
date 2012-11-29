@@ -11,8 +11,7 @@ Gem::Specification.new do |gem|
   gem.description   = %q{A C extension library for parsing accounting files in acct(5) format}
   gem.summary       = %q{A C extension library for parsing accounting files in acct(5) format}
   gem.homepage      = "https://github.com/blm768/bookie"
-  #To do: ignore 
-  gem.platform      = Gem::Platform::CURRENT
+  gem.platform      = Gem::Platform.new('universal-linux')
   
   gem.files         = `git ls-files`.split($/)
   gem.executables   = gem.files.grep(%r{^bin/}).map{ |f| File.basename(f) }
