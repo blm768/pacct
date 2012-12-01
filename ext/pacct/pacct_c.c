@@ -231,7 +231,7 @@ static VALUE ruby_pacct_entry_new(VALUE self) {
  *call-seq:
  *  each_entry([start]) {|entry, index| ...}
  *
- *Yields each entry in the file to the given block and its index in the file
+ *Yields each entry in the file to the given block
  *
  *If start is given, iteration starts at the entry with that index.
  */
@@ -337,7 +337,9 @@ static VALUE get_process_id(VALUE self) {
   return INT2NUM(data->ac_pid);
 }
 
-//Unused
+/*
+ *Sets the process ID
+ */
 static VALUE set_process_id(VALUE self, VALUE pid) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
