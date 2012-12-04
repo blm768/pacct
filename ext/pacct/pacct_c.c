@@ -18,23 +18,29 @@ static char const* validFileModes[] = {
   "w+b",
 };
 
-VALUE mPacct;
-VALUE cLog;
-VALUE cEntry;
+static VALUE mPacct;
+static VALUE cLog;
+static VALUE cEntry;
 
 //Classes from Ruby
-VALUE cTime;
-VALUE cNoMemoryError;
-VALUE cSystemCallError;
+static VALUE cTime;
+static VALUE cNoMemoryError;
+static VALUE cSystemCallError;
 
 //Identifiers
-ID id_at;
-ID id_new;
-ID id_to_i;
+static ID id_at;
+static ID id_new;
+static ID id_to_i;
+
+//To do: where is a better place to put these?
+static VALUE known_users_by_name = Qnil;
+static VALUE known_groups_by_name = Qnil;
+static VALUE known_users_by_id = Qnil;
+static VALUE known_groups_by_id = Qnil;
 
 //System parameters
-int pageSize;
-long ticksPerSecond;
+static int pageSize;
+static long ticksPerSecond;
 
 //Converts a comp_t to a long
 static unsigned long comp_t_to_ulong(comp_t c) {
@@ -365,8 +371,17 @@ static VALUE get_user_id(VALUE self) {
 static VALUE get_user_name(VALUE self) {
   struct acct_v3* data;
   struct passwd* pw_data;
+  VALUE id, name;
   Data_Get_Struct(self, struct acct_v3, data);
   
+  //If there's a cached user name, return it.
+  id = UINT2NUM(data->ac_uid);
+  name = rb_hash_aref(known_users_by_id, id);
+  if(name != Qnil) {
+    return name;
+  }
+  
+  //Otherwise, get the user name from the OS.
   errno = 0;
   pw_data = getpwuid(data->ac_uid);
   if(!pw_data) {
@@ -381,7 +396,11 @@ static VALUE get_user_name(VALUE self) {
     rb_exc_raise(err);
   }
   
-  return rb_str_new2(pw_data->pw_name);
+  //Cache the user name.
+  name = rb_str_new2(pw_data->pw_name);
+  rb_hash_aset(known_users_by_id, id, name);
+  
+  return name;
 }
 
 /*
@@ -391,7 +410,14 @@ static VALUE set_user_name(VALUE self, VALUE name) {
   struct acct_v3* data;
   struct passwd* pw_data;
   char* cName = StringValueCStr(name);
+  VALUE id;
   Data_Get_Struct(self, struct acct_v3, data);
+  
+  id = rb_hash_aref(known_users_by_name, name);
+  if(id != Qnil) {
+    data->ac_uid = NUM2UINT(id);
+    return Qnil;
+  }
   
   errno = 0;
   pw_data = getpwnam(cName);
@@ -406,6 +432,9 @@ static VALUE set_user_name(VALUE self, VALUE name) {
     err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(e));
     rb_exc_raise(err);
   }
+  
+  id = UINT2NUM(pw_data->pw_uid);
+  rb_hash_aset(known_users_by_name, name, id);
   
   data->ac_uid = pw_data->pw_uid;
   
@@ -719,6 +748,17 @@ void Init_pacct_c() {
   id_at = rb_intern("at");
   id_new = rb_intern("new");
   id_to_i = rb_intern("to_i");
+  
+  //To consider: is there any place that these can be unregistered?
+  rb_gc_register_address(&known_users_by_name);
+  rb_gc_register_address(&known_groups_by_name);
+  rb_gc_register_address(&known_users_by_id);
+  rb_gc_register_address(&known_groups_by_id);
+
+  known_users_by_name = rb_hash_new();
+  known_groups_by_name = rb_hash_new();
+  known_users_by_id = rb_hash_new();
+  known_groups_by_id = rb_hash_new();
 
   //Define Ruby modules/objects/methods.
   mPacct = rb_define_module("Pacct");

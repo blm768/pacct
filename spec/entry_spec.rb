@@ -4,8 +4,8 @@ describe Pacct::Entry do
   it "correctly converts \"comp_t\"s to integers" do
     comp_t_to_ulong = Pacct::Test.method(:comp_t_to_ulong)
     comp_t_to_ulong.call(1).should eql 1
-    comp_t_to_ulong.call((1 << 13) | 1).should eql (1 << 3)
-    comp_t_to_ulong.call((3 << 13) | 20).should eql (20 << 9)
+    comp_t_to_ulong.call((1 << 13) | 1).should eql(1 << 3)
+    comp_t_to_ulong.call((3 << 13) | 20).should eql(20 << 9)
   end
 
 #To do: unit test this (eventually).
