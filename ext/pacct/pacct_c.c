@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -409,7 +408,7 @@ static VALUE get_user_name(VALUE self) {
 static VALUE set_user_name(VALUE self, VALUE name) {
   struct acct_v3* data;
   struct passwd* pw_data;
-  char* cName = StringValueCStr(name);
+  char* c_name = StringValueCStr(name);
   VALUE id;
   Data_Get_Struct(self, struct acct_v3, data);
   
@@ -420,12 +419,12 @@ static VALUE set_user_name(VALUE self, VALUE name) {
   }
   
   errno = 0;
-  pw_data = getpwnam(cName);
+  pw_data = getpwnam(c_name);
   if(!pw_data) {
     char buf[512];
     VALUE err;
     int e = errno;
-    snprintf(buf, 512, "Unable to obtain user ID for name '%s'", cName);
+    snprintf(buf, 512, "Unable to obtain user ID for name '%s'", c_name);
     if(e == 0) {
         e = ENODATA;
     }
@@ -457,7 +456,14 @@ static VALUE get_group_id(VALUE self) {
 static VALUE get_group_name(VALUE self) {
   struct acct_v3* data;
   struct group* group_data;
+  VALUE name, id;
   Data_Get_Struct(self, struct acct_v3, data);
+  
+  id = UINT2NUM(data->ac_gid);
+  name = rb_hash_aref(known_groups_by_id, id);
+  if(name != Qnil) {
+    return name;
+  }
   
   errno = 0;
   group_data = getgrgid(data->ac_gid);
@@ -473,7 +479,10 @@ static VALUE get_group_name(VALUE self) {
     rb_exc_raise(err);
   }
   
-  return rb_str_new2(group_data->gr_name);
+  name = rb_str_new2(group_data->gr_name);
+  rb_hash_aset(known_groups_by_id, id, name);
+  
+  return name;
 }
 
 /*
@@ -482,22 +491,32 @@ static VALUE get_group_name(VALUE self) {
 static VALUE set_group_name(VALUE self, VALUE name) {
   struct acct_v3* data;
   struct group* group_data;
-  char* cName = StringValueCStr(name);
+  VALUE id;
+  char* c_name = StringValueCStr(name);
   Data_Get_Struct(self, struct acct_v3, data);
   
+  id = rb_hash_aref(known_groups_by_name, name);
+  if(id != Qnil) {
+    data->ac_gid = NUM2UINT(id);
+    return Qnil;
+  }
+  
   errno = 0;
-  group_data = getgrnam(cName);
+  group_data = getgrnam(c_name);
   if(!group_data) {
     char buf[512];
     VALUE err;
     int e = errno;
-    snprintf(buf, 512, "Unable to obtain group ID for name '%s'", cName);
+    snprintf(buf, 512, "Unable to obtain group ID for name '%s'", c_name);
     if(e == 0) {
       e = ENODATA;
     } 
     err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(e));
     rb_exc_raise(err);
   }
+  
+  id = UINT2NUM(group_data->gr_gid);
+  rb_hash_aset(known_groups_by_name, name, id);
   
   data->ac_gid = group_data->gr_gid;
   

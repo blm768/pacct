@@ -40,7 +40,7 @@ describe Pacct::Entry do
       expect { entry.group_name }.to raise_error(
         Errno::ENODATA.new('Unable to obtain group name for ID 4294967295').to_s)
       expect { entry.group_name = '_____ _' }.to raise_error(
-        Errno::ENODATA.new("Unable to obtain group ID for name '_____ _'").to_s) 
+        Errno::ENODATA.new("Unable to obtain group ID for name '_____ _'").to_s)
     end
   end
 end
