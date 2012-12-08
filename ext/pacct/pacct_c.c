@@ -184,7 +184,8 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
   c_filename_len = strlen(c_filename);
   log->filename = malloc(c_filename_len + 1);
   ENSURE_ALLOCATED(log->filename);
-  memcpy(log->filename, c_filename, c_filename_len);
+  strncpy(log->filename, c_filename, c_filename_len);
+  log->filename[c_filename_len] = '\0';
   
   CHECK_CALL(fseek(acct, 0, SEEK_END), 0);
   length = ftell(acct);
@@ -197,6 +198,12 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
   log->num_entries = length / sizeof(struct acct_v3);
   
   return self;
+}
+
+static void pacct_log_check_closed(PacctLog* log) {
+  if(!log->file) {
+      rb_raise(rb_eRuntimeError, "The file '%s' has already been closed.", log->filename);
+    }
 }
 
 /*
@@ -219,11 +226,10 @@ static VALUE pacct_entry_new(PacctLog* log) {
   struct acct_v3* ptr;
   VALUE entry = Data_Make_Struct(cEntry, struct acct_v3, 0, free, ptr);
   if(log) {
-    if(!log->file) {
-      rb_raise("The file %s has already been closed.", log->filename);
-    }
-    size_t entriesRead = fread(ptr, sizeof(struct acct_v3), 1, log->file);
-    if(entriesRead != 1) {
+    size_t entries_read;
+    pacct_log_check_closed(log);
+    entries_read = fread(ptr, sizeof(struct acct_v3), 1, log->file);
+    if(entries_read != 1) {
       rb_raise(rb_eIOError, "Unable to read record from accounting file '%s'", log->filename);
     }
   } else {
@@ -259,9 +265,7 @@ static VALUE each_entry(int argc, VALUE* argv, VALUE self) {
   
   Data_Get_Struct(self, PacctLog, log);
   
-  if(!log->file) {
-    rb_raise("The file %s has already been closed.", log->filename);
-  }
+  pacct_log_check_closed(log);
   
   if(start > log->num_entries) {
     rb_raise(rb_eRangeError, "Index %li is out of range", start);
@@ -286,6 +290,8 @@ static VALUE last_entry(VALUE self) {
   VALUE entry;
   
   Data_Get_Struct(self, PacctLog, log);
+  
+  pacct_log_check_closed(log);
   
   if(log->num_entries == 0) {
     return Qnil;
@@ -325,6 +331,7 @@ static VALUE write_entry(VALUE self, VALUE entry) {
   struct acct_v3* acct;
   
   Data_Get_Struct(self, PacctLog, log);
+  pacct_log_check_closed(log);
   Data_Get_Struct(entry, struct acct_v3, acct);
   
   pos = ftell(log->file);

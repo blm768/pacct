@@ -102,6 +102,15 @@ describe Pacct::Log do
     File.exists?('snapshot/abc').should eql true
     FileUtils.rm('snapshot/abc')
   end
+  
+  it "raises an error if an attempt is made to access the file after it has been closed" do
+    log = Pacct::Log.new('/dev/null')
+    log.close
+    str = "The file '/dev/null' has already been closed."
+    expect { log.each_entry }.to raise_error(str)
+    expect { log.write_entry(nil) }.to raise_error(str)
+    expect { log.last_entry }.to raise_error(str)
+  end
 end
 
 module Helpers
