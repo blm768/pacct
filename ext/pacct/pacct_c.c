@@ -199,6 +199,9 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
   return self;
 }
 
+/*
+ *Closes the log file
+ */
 static VALUE pacct_log_close(VALUE self) {
   PacctLog* log;
   
@@ -216,6 +219,9 @@ static VALUE pacct_entry_new(PacctLog* log) {
   struct acct_v3* ptr;
   VALUE entry = Data_Make_Struct(cEntry, struct acct_v3, 0, free, ptr);
   if(log) {
+    if(!log->file) {
+      rb_raise("The file %s has already been closed.", log->filename);
+    }
     size_t entriesRead = fread(ptr, sizeof(struct acct_v3), 1, log->file);
     if(entriesRead != 1) {
       rb_raise(rb_eIOError, "Unable to read record from accounting file '%s'", log->filename);
@@ -252,6 +258,10 @@ static VALUE each_entry(int argc, VALUE* argv, VALUE self) {
   }
   
   Data_Get_Struct(self, PacctLog, log);
+  
+  if(!log->file) {
+    rb_raise("The file %s has already been closed.", log->filename);
+  }
   
   if(start > log->num_entries) {
     rb_raise(rb_eRangeError, "Index %li is out of range", start);
@@ -689,9 +699,8 @@ static VALUE set_exit_code(VALUE self, VALUE value) {
   return Qnil;
 }
 
-/*
-Unit testing code
-*/
+//Unit testing code
+
 static VALUE test_check_call_macro(VALUE self, VALUE test) {
   int i = NUM2INT(test);
   switch(i) {
@@ -825,8 +834,12 @@ void Init_pacct_c() {
   rb_define_method(cEntry, "command_name=", set_command_name, 1);
   
   //To consider: support other testing frameworks?
+  
   mRSpec = rb_const_defined(rb_cObject, rb_intern("RSpec"));
   if(mRSpec == Qtrue) {
+    /*
+     *Document-module: Pacct::Test
+     */
     VALUE mTest = rb_define_module_under(mPacct, "Test");
     rb_define_module_function(mTest, "check_call", test_check_call_macro, 1);
     rb_define_module_function(mTest, "write_failure", test_write_failure, 0);
