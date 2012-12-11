@@ -846,6 +846,10 @@ void Init_pacct_c() {
   if(mRSpec == Qtrue) {
     /*
      *Document-module: Pacct::Test
+     *
+     *Contains unit-testing methods
+     *
+     *Only defined when RSpec is loaded
      */
     VALUE mTest = rb_define_module_under(mPacct, "Test");
     rb_define_module_function(mTest, "check_call", test_check_call_macro, 1);

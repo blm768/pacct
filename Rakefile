@@ -10,6 +10,6 @@ RSpec::Core::RakeTask.new(:spec) do |task|
 end
 
 task :docs do
-  system("rdoc --exclude '(./)?spec/'")
+  system("rdoc ext lib")
 end
 
