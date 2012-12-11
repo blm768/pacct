@@ -10,7 +10,7 @@ Gem::Specification.new do |gem|
   gem.email         = ["blm768@gmail.com"]
   gem.description   = %q{A C extension library for parsing accounting files in acct(5) format}
   gem.summary       = %q{A C extension library for parsing accounting files in acct(5) format}
-  gem.homepage      = "https://github.com/blm768/bookie"
+  gem.homepage      = "https://github.com/blm768/pacct"
   gem.platform      = Gem::Platform.new('universal-linux')
   
   gem.files         = `git ls-files`.split($/)
