@@ -1,5 +1,7 @@
 require 'mkmf'
 
+$CFLAGS << ' -Werror'
+
 =begin
 if ENV['COVERAGE']
   $CFLAGS << ' -fprofile-arcs -ftest-coverage'
