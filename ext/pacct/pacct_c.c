@@ -88,6 +88,7 @@ static comp_t ulong_to_comp_t(unsigned long l) {
 }
 
 //Checks the result of a call, raising an error if it fails
+//To do: handle non-integer values in the rb_raise format string?
 #define CHECK_CALL(expr, expected_result) \
   { \
     typeof(expr) expected = (expected_result); \
@@ -102,9 +103,7 @@ static comp_t ulong_to_comp_t(unsigned long l) {
         err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(errno)); \
         rb_exc_raise(err); \
       } else { \
-        char buf[512]; \
-        snprintf(buf, sizeof(buf), #expr ": result %i expected, not %i - %s(%u)", expected, result, __FILE__, __LINE__); \
-        rb_raise(rb_eRuntimeError, buf); \
+        rb_raise(rb_eRuntimeError, #expr ": result %i expected, not %i - %s(%u)", expected, result, __FILE__, __LINE__); \
       } \
     } \
   } \
