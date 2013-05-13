@@ -41,20 +41,9 @@ static VALUE known_groups_by_id = Qnil;
 static int pageSize;
 static long ticksPerSecond;
 
-//Converts a comp_t to a long
+//Converts a comp_t to a ulong
 static unsigned long comp_t_to_ulong(comp_t c) {
   return (unsigned long)(c & 0x1fff) << (((c >> 13) & 0x7) * 3);
-}
-
-//Prints a number in binary (for debugging)
-static void print_bin(unsigned long val) {
-  //Cast prevents warning
-  unsigned long bits = (unsigned long)1 << (sizeof(unsigned long) * 8 - 1);
-  putchar('0' + ((val & bits) > 0));
-  while(bits >>= 1) {
-    putchar('0' + ((val & bits) > 0));
-  }
-  putchar('\n');
 }
 
 //Converts a long to a comp_t
@@ -74,16 +63,15 @@ static comp_t ulong_to_comp_t(unsigned long l) {
   } else {
     size_t div_bits, rem_bits;
     bits -= 13;
-    div_bits = bits / 3;
-    if(div_bits >= 8) {
+    rem_bits = bits % 3;
+    if(rem_bits) {
+	  bits += (3 - rem_bits);
+    }
+	if(bits >= 24) {
       rb_raise(rb_eRangeError, "Exponent overflow in ulong_to_comp_t: Value %lu is too large.", l);
     }
-    rem_bits = bits - div_bits * 3;
-    if(rem_bits) {
-      div_bits += 1;
-    }
     //To consider: remove '&'?
-    return ((l >> bits) & 0x1fff) | ((div_bits & 0x7) << 13);
+    return ((l >> bits) & 0x1fff) | ((bits / 3) << 13);
   }
 }
 
@@ -855,5 +843,7 @@ void Init_pacct_c() {
     rb_define_module_function(mTest, "write_failure", test_write_failure, 0);
     rb_define_module_function(mTest, "read_failure", test_read_failure, 0);
     rb_define_module_function(mTest, "comp_t_to_ulong", test_comp_t_to_ulong, 1);
+	//To do: create unit test.
+	rb_define_module_function(mTest, "ulong_to_comp_t", test_ulong_to_comp_t, 1);
   }
 }
