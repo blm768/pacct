@@ -61,7 +61,7 @@ static comp_t ulong_to_comp_t(unsigned long l) {
   if(bits <= 13) {
     return (l & 0x1fff);
   } else {
-    size_t div_bits, rem_bits;
+    size_t rem_bits;
     bits -= 13;
     rem_bits = bits % 3;
     if(rem_bits) {
