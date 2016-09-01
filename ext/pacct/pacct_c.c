@@ -52,27 +52,29 @@ static unsigned long comp_t_to_ulong(comp_t c) {
 static comp_t ulong_to_comp_t(unsigned long l) {
   size_t bits = 0;
   unsigned long l2 = l;
-  if(l2) {
-    bits = 1;
-    while(l2 >>= 1) {
-      ++bits;
-    }
-  } 
+  // Find the number of bits necessary to represent l
+  while(l2) {
+    ++bits;
+    l2 >>= 1;
+  }
+  // If the value is small enough to fit in the mantissa without an exponent,
+  // just return it.
   if(bits <= 13) {
     return (l & 0x1fff);
-  } else {
-    size_t rem_bits;
-    bits -= 13;
-    rem_bits = bits % 3;
-    if(rem_bits) {
-	  bits += (3 - rem_bits);
-    }
-	if(bits >= 24) {
-      rb_raise(rb_eRangeError, "Exponent overflow in ulong_to_comp_t: Value %lu is too large.", l);
-    }
-    //To consider: remove '&'?
-    return ((l >> bits) & 0x1fff) | ((bits / 3) << 13);
   }
+
+  // TODO: try to remember how this logic works. ;)
+  size_t rem_bits;
+  bits -= 13;
+  rem_bits = bits % 3;
+  if(rem_bits) {
+    bits += (3 - rem_bits);
+  }
+  if(bits >= 24) {
+    rb_raise(rb_eRangeError, "Exponent overflow in ulong_to_comp_t: Value %lu is too large.", l);
+  }
+  //To consider: remove '&'?
+  return ((l >> bits) & 0x1fff) | ((bits / 3) << 13);
 }
 
 //Checks the result of a call, raising an error if it fails
@@ -124,15 +126,15 @@ static VALUE pacct_log_new(int argc, VALUE* argv, VALUE class) {
   VALUE log;
   VALUE init_args[2];
   PacctLog* ptr;
-  
+
   init_args[1] = Qnil;
   rb_scan_args(argc, argv, "11", init_args, init_args + 1);
-  
+
   log = Data_Make_Struct(class, PacctLog, 0, pacct_log_free, ptr);
-  
+
   ptr->file = NULL;
   ptr->num_entries = 0;
-  
+
   rb_obj_call_init(log, 2, init_args);
   return log;
 }
@@ -144,7 +146,7 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
   char* c_filename = StringValueCStr(filename);
   size_t c_filename_len;
   const char* c_mode = "rb";
-  
+
   if(mode != Qnil) {
     int isValidMode = 0;
     size_t i;
@@ -159,31 +161,31 @@ static VALUE pacct_log_init(VALUE self, VALUE filename, VALUE mode) {
       rb_raise(rb_eArgError, "Invalid mode for Pacct::File: '%s'", c_mode);
     }
   }
-  
+
   acct = fopen(c_filename, c_mode);
   if(!acct) {
     rb_raise(rb_eIOError, "Unable to open file '%s'", c_filename);
   }
-  
+
   Data_Get_Struct(self, PacctLog, log);
-  
+
   log->file = acct;
   c_filename_len = strlen(c_filename);
   log->filename = malloc(c_filename_len + 1);
   ENSURE_ALLOCATED(log->filename);
   strncpy(log->filename, c_filename, c_filename_len);
   log->filename[c_filename_len] = '\0';
-  
+
   CHECK_CALL(fseek(acct, 0, SEEK_END), 0);
   length = ftell(acct);
   rewind(acct);
-  
+
   if(length % sizeof(struct acct_v3) != 0) {
     rb_raise(rb_eIOError, "Accounting file '%s' appears to be the wrong size.", c_filename);
   }
-  
+
   log->num_entries = length / sizeof(struct acct_v3);
-  
+
   return self;
 }
 
@@ -198,14 +200,14 @@ static void pacct_log_check_closed(PacctLog* log) {
  */
 static VALUE pacct_log_close(VALUE self) {
   PacctLog* log;
-  
+
   Data_Get_Struct(self, PacctLog, log);
-  
+
   if(log->file) {
     fclose(log->file);
     log->file = NULL;
   }
-  
+
   return Qnil;
 }
 
@@ -214,15 +216,17 @@ static VALUE pacct_entry_new(PacctLog* log) {
   VALUE entry = Data_Make_Struct(cEntry, struct acct_v3, 0, free, ptr);
   if(log) {
     size_t entries_read;
+    // TODO: just let fread() catch this case?
     pacct_log_check_closed(log);
     entries_read = fread(ptr, sizeof(struct acct_v3), 1, log->file);
     if(entries_read != 1) {
+      // TODO: pass errno in the exception.
       rb_raise(rb_eIOError, "Unable to read record from accounting file '%s'", log->filename);
     }
   } else {
     memset(ptr, 0, sizeof(struct acct_v3));
   }
-  
+
   return entry;
 }
 
@@ -244,22 +248,22 @@ static VALUE each_entry(int argc, VALUE* argv, VALUE self) {
   VALUE start_value;
   long start = 0;
   int i = 0;
-  
+
   rb_scan_args(argc, argv, "01", &start_value);
   if(argc && start_value != Qnil) {
     start = NUM2UINT(start_value);
   }
-  
+
   Data_Get_Struct(self, PacctLog, log);
-  
+
   pacct_log_check_closed(log);
-  
+
   if(start > log->num_entries) {
     rb_raise(rb_eRangeError, "Index %li is out of range", start);
   }
-  
+
   CHECK_CALL(fseek(log->file, start * sizeof(struct acct_v3), SEEK_SET), 0);
-  
+
   for(i = start; i < log->num_entries; ++i) {
     VALUE entry = pacct_entry_new(log);
     rb_yield(entry);
@@ -275,22 +279,22 @@ static VALUE last_entry(VALUE self) {
   PacctLog* log;
   long pos;
   VALUE entry;
-  
+
   Data_Get_Struct(self, PacctLog, log);
-  
+
   pacct_log_check_closed(log);
-  
+
   if(log->num_entries == 0) {
     return Qnil;
   }
-  
+
   pos = ftell(log->file);
   CHECK_CALL(fseek(log->file, -sizeof(struct acct_v3), SEEK_END), 0);
-  
+
   entry = pacct_entry_new(log);
-  
+
   CHECK_CALL(fseek(log->file, pos, SEEK_SET), 0);
-  
+
   return entry;
 }
 
@@ -299,9 +303,9 @@ static VALUE last_entry(VALUE self) {
  */
 static VALUE get_num_entries(VALUE self) {
   PacctLog* log;
-  
+
   Data_Get_Struct(self, PacctLog, log);
-  
+
   return INT2NUM(log->num_entries);
 }
 
@@ -316,22 +320,22 @@ static VALUE write_entry(VALUE self, VALUE entry) {
   PacctLog* log;
   long pos;
   struct acct_v3* acct;
-  
+
   Data_Get_Struct(self, PacctLog, log);
   pacct_log_check_closed(log);
   Data_Get_Struct(entry, struct acct_v3, acct);
-  
+
   pos = ftell(log->file);
   CHECK_CALL(fseek(log->file, 0, SEEK_END), 0);
-  
+
   if(fwrite(acct, sizeof(struct acct_v3), 1, log->file) != 1) {
     rb_raise(rb_eIOError, "Unable to write to accounting file '%s'", log->filename);
   }
-  
+
   ++(log->num_entries);
-  
+
   CHECK_CALL(fseek(log->file, pos, SEEK_SET), 0);
-  
+
   return Qnil;
 }
 
@@ -342,7 +346,7 @@ static VALUE write_entry(VALUE self, VALUE entry) {
 static VALUE get_process_id(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return INT2NUM(data->ac_pid);
 }
 
@@ -352,9 +356,9 @@ static VALUE get_process_id(VALUE self) {
 static VALUE set_process_id(VALUE self, VALUE pid) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   data->ac_pid = NUM2UINT(pid);
-  
+
   return Qnil;
 }
 
@@ -364,7 +368,7 @@ static VALUE set_process_id(VALUE self, VALUE pid) {
 static VALUE get_user_id(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return INT2NUM(data->ac_uid);
 }
 
@@ -376,14 +380,14 @@ static VALUE get_user_name(VALUE self) {
   struct passwd* pw_data;
   VALUE id, name;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   //If there's a cached user name, return it.
   id = UINT2NUM(data->ac_uid);
   name = rb_hash_aref(known_users_by_id, id);
   if(name != Qnil) {
     return name;
   }
-  
+
   //Otherwise, get the user name from the OS.
   errno = 0;
   pw_data = getpwuid(data->ac_uid);
@@ -398,11 +402,11 @@ static VALUE get_user_name(VALUE self) {
     err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(e));
     rb_exc_raise(err);
   }
-  
+
   //Cache the user name.
   name = rb_str_new2(pw_data->pw_name);
   rb_hash_aset(known_users_by_id, id, name);
-  
+
   return name;
 }
 
@@ -415,13 +419,13 @@ static VALUE set_user_name(VALUE self, VALUE name) {
   char* c_name = StringValueCStr(name);
   VALUE id;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   id = rb_hash_aref(known_users_by_name, name);
   if(id != Qnil) {
     data->ac_uid = NUM2UINT(id);
     return Qnil;
   }
-  
+
   errno = 0;
   pw_data = getpwnam(c_name);
   if(!pw_data) {
@@ -435,12 +439,12 @@ static VALUE set_user_name(VALUE self, VALUE name) {
     err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(e));
     rb_exc_raise(err);
   }
-  
+
   id = UINT2NUM(pw_data->pw_uid);
   rb_hash_aset(known_users_by_name, name, id);
-  
+
   data->ac_uid = pw_data->pw_uid;
-  
+
   return Qnil;
 }
 
@@ -450,7 +454,7 @@ static VALUE set_user_name(VALUE self, VALUE name) {
 static VALUE get_group_id(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return INT2NUM(data->ac_gid);
 }
 
@@ -462,13 +466,13 @@ static VALUE get_group_name(VALUE self) {
   struct group* group_data;
   VALUE name, id;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   id = UINT2NUM(data->ac_gid);
   name = rb_hash_aref(known_groups_by_id, id);
   if(name != Qnil) {
     return name;
   }
-  
+
   errno = 0;
   group_data = getgrgid(data->ac_gid);
   if(!group_data) {
@@ -482,10 +486,10 @@ static VALUE get_group_name(VALUE self) {
     err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(e));
     rb_exc_raise(err);
   }
-  
+
   name = rb_str_new2(group_data->gr_name);
   rb_hash_aset(known_groups_by_id, id, name);
-  
+
   return name;
 }
 
@@ -498,13 +502,13 @@ static VALUE set_group_name(VALUE self, VALUE name) {
   VALUE id;
   char* c_name = StringValueCStr(name);
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   id = rb_hash_aref(known_groups_by_name, name);
   if(id != Qnil) {
     data->ac_gid = NUM2UINT(id);
     return Qnil;
   }
-  
+
   errno = 0;
   group_data = getgrnam(c_name);
   if(!group_data) {
@@ -514,16 +518,16 @@ static VALUE set_group_name(VALUE self, VALUE name) {
     snprintf(buf, 512, "Unable to obtain group ID for name '%s'", c_name);
     if(e == 0) {
       e = ENODATA;
-    } 
+    }
     err = rb_funcall(cSystemCallError, id_new, 2, rb_str_new2(buf), INT2NUM(e));
     rb_exc_raise(err);
   }
-  
+
   id = UINT2NUM(group_data->gr_gid);
   rb_hash_aset(known_groups_by_name, name, id);
-  
+
   data->ac_gid = group_data->gr_gid;
-  
+
   return Qnil;
 }
 
@@ -533,7 +537,7 @@ static VALUE set_group_name(VALUE self, VALUE name) {
 static VALUE get_user_time(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return INT2NUM(comp_t_to_ulong(data->ac_utime) / ticksPerSecond);
 }
 
@@ -543,9 +547,9 @@ static VALUE get_user_time(VALUE self) {
 static VALUE set_user_time(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   data->ac_utime = ulong_to_comp_t(NUM2ULONG(value) * ticksPerSecond);
-  
+
   return Qnil;
 }
 
@@ -555,7 +559,7 @@ static VALUE set_user_time(VALUE self, VALUE value) {
 static VALUE get_system_time(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return INT2NUM(comp_t_to_ulong(data->ac_stime) / ticksPerSecond);
 }
 
@@ -565,9 +569,9 @@ static VALUE get_system_time(VALUE self) {
 static VALUE set_system_time(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   data->ac_stime = ulong_to_comp_t(NUM2ULONG(value) * ticksPerSecond);
-  
+
   return Qnil;
 }
 
@@ -577,7 +581,7 @@ static VALUE set_system_time(VALUE self, VALUE value) {
 static VALUE get_cpu_time(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return INT2NUM((comp_t_to_ulong(data->ac_utime) + comp_t_to_ulong(data->ac_stime)) / ticksPerSecond);
 }
 
@@ -587,7 +591,7 @@ static VALUE get_cpu_time(VALUE self) {
 static VALUE get_wall_time(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return rb_float_new(data->ac_etime);
 }
 
@@ -597,9 +601,9 @@ static VALUE get_wall_time(VALUE self) {
 static VALUE set_wall_time(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   data->ac_etime = NUM2DBL(value);
-  
+
   return Qnil;
 }
 
@@ -609,7 +613,7 @@ static VALUE set_wall_time(VALUE self, VALUE value) {
 static VALUE get_start_time(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return rb_funcall(cTime, id_at, 1, INT2NUM(data->ac_btime));
 }
 
@@ -619,9 +623,9 @@ static VALUE get_start_time(VALUE self) {
 static VALUE set_start_time(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   data->ac_btime = NUM2UINT(rb_funcall(value, id_to_i, 0));
-  
+
   return Qnil;
 }
 
@@ -631,7 +635,7 @@ static VALUE set_start_time(VALUE self, VALUE value) {
 static VALUE get_average_mem_usage(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   //Why divided by page size?
   return INT2NUM(comp_t_to_ulong(data->ac_mem) * 1024 / pageSize);
 }
@@ -642,9 +646,9 @@ static VALUE get_average_mem_usage(VALUE self) {
 static VALUE set_average_mem_usage(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   data->ac_mem = ulong_to_comp_t(NUM2ULONG(value) * pageSize / 1024);
-  
+
   return Qnil;
 }
 
@@ -654,7 +658,7 @@ static VALUE set_average_mem_usage(VALUE self, VALUE value) {
 static VALUE get_command_name(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return rb_str_new2(data->ac_comm);
 }
 
@@ -664,10 +668,10 @@ static VALUE get_command_name(VALUE self) {
 static VALUE set_command_name(VALUE self, VALUE name) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   strncpy(data->ac_comm, StringValueCStr(name), ACCT_COMM - 1);
   data->ac_comm[ACCT_COMM - 1] = '\0';
-  
+
   return Qnil;
 }
 
@@ -677,7 +681,7 @@ static VALUE set_command_name(VALUE self, VALUE name) {
 static VALUE get_exit_code(VALUE self) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   return INT2NUM(data->ac_exitcode);
 }
 
@@ -687,9 +691,9 @@ static VALUE get_exit_code(VALUE self) {
 static VALUE set_exit_code(VALUE self, VALUE value) {
   struct acct_v3* data;
   Data_Get_Struct(self, struct acct_v3, data);
-  
+
   data->ac_exitcode = NUM2UINT(value);
-  
+
   return Qnil;
 }
 
@@ -723,7 +727,7 @@ static VALUE test_read_failure(VALUE self) {
   ENSURE_ALLOCATED(log.filename);
   strcpy(log.filename, filename);
   log.file = fopen(log.filename, "r");
-  
+
   pacct_entry_new(&log);
   return Qnil;
 }
@@ -738,7 +742,7 @@ static VALUE test_write_failure(VALUE self) {
   ENSURE_ALLOCATED(ptr->filename);
   strcpy(ptr->filename, filename);
   ptr->file = fopen(ptr->filename, "r");
-  
+
   write_entry(log, entry);
   return Qnil;
 }
@@ -757,8 +761,11 @@ static VALUE test_comp_t_to_ulong(VALUE self, VALUE val) {
 
 void Init_pacct_c() {
   VALUE mRSpec;
-  
-  //Get system parameters
+
+  // Get system parameters
+  // NOTE: if the process accounting files were not created on the machine that
+  // executes this code, the values may be off. In practice, that shouldn't be
+  // a major issue on x86_64 systems with modern Linux kernels.
   pageSize = getpagesize();
   ticksPerSecond = sysconf(_SC_CLK_TCK);
 
@@ -766,11 +773,11 @@ void Init_pacct_c() {
   cTime = rb_const_get(rb_cObject, rb_intern("Time"));
   cSystemCallError = rb_const_get(rb_cObject, rb_intern("SystemCallError"));
   cNoMemoryError = rb_const_get(rb_cObject, rb_intern("NoMemoryError"));
-  
+
   id_at = rb_intern("at");
   id_new = rb_intern("new");
   id_to_i = rb_intern("to_i");
-  
+
   //To consider: is there any place that these can be unregistered?
   rb_gc_register_address(&known_users_by_name);
   rb_gc_register_address(&known_groups_by_name);
@@ -801,7 +808,7 @@ void Init_pacct_c() {
   rb_define_method(cLog, "num_entries", get_num_entries, 0);
   rb_define_method(cLog, "write_entry", write_entry, 1);
   rb_define_method(cLog, "close", pacct_log_close, 0);
-  
+
   rb_define_singleton_method(cEntry, "new", ruby_pacct_entry_new, 0);
   rb_define_method(cEntry, "process_id", get_process_id, 0);
   rb_define_method(cEntry, "process_id=", set_process_id, 1);
@@ -826,9 +833,9 @@ void Init_pacct_c() {
   rb_define_method(cEntry, "exit_code=", set_exit_code, 1);
   rb_define_method(cEntry, "command_name", get_command_name, 0);
   rb_define_method(cEntry, "command_name=", set_command_name, 1);
-  
+
   //To consider: support other testing frameworks?
-  
+
   mRSpec = rb_const_defined(rb_cObject, rb_intern("RSpec"));
   if(mRSpec == Qtrue) {
     /*
@@ -843,7 +850,7 @@ void Init_pacct_c() {
     rb_define_module_function(mTest, "write_failure", test_write_failure, 0);
     rb_define_module_function(mTest, "read_failure", test_read_failure, 0);
     rb_define_module_function(mTest, "comp_t_to_ulong", test_comp_t_to_ulong, 1);
-	//To do: create unit test.
-	rb_define_module_function(mTest, "ulong_to_comp_t", test_ulong_to_comp_t, 1);
+    //To do: create unit test.
+    rb_define_module_function(mTest, "ulong_to_comp_t", test_ulong_to_comp_t, 1);
   }
 }
